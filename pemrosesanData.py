@@ -16,16 +16,31 @@ df_result = spark.read.csv(input_path, header=True, inferSchema=True)
 # Menggabungkan kata-kata yang telah difilter dari kolom title dan content
 df_filtered = df_result.withColumn("filtered_words", concat_ws(" ", col("title_filtered"), col("content_filtered")))
 
+# Menampilkan 5 baris teratas setelah menggabungkan kata-kata yang difilter
+df_filtered.select("filtered_words").show(5, truncate=False)
+
 # --- 2. Tokenisasi dan TF-IDF ---
+# Tokenisasi
 tokenizer_filtered = Tokenizer(inputCol="filtered_words", outputCol="words")
 df_tokenized_filtered = tokenizer_filtered.transform(df_filtered)
 
+# Menampilkan 5 baris teratas setelah tokenisasi
+df_tokenized_filtered.select("filtered_words", "words").show(5, truncate=False)
+
+# HashingTF
 hashingTF = HashingTF(inputCol="words", outputCol="rawFeatures", numFeatures=1000)
 featurizedData = hashingTF.transform(df_tokenized_filtered)
 
+# Menampilkan 5 baris teratas setelah HashingTF
+featurizedData.select("words", "rawFeatures").show(5, truncate=False)
+
+# IDF
 idf = IDF(inputCol="rawFeatures", outputCol="features")
 idfModel = idf.fit(featurizedData)
 rescaledData = idfModel.transform(featurizedData)
+
+# Menampilkan 5 baris teratas setelah IDF
+rescaledData.select("rawFeatures", "features").show(5, truncate=False)
 
 # Konversi kolom features menjadi array float
 def vector_to_array(v):
@@ -81,7 +96,7 @@ df_pca_pd = df_pca.select("x", "y", "cluster", "sentiment").toPandas()
 # --- 6. Visualisasi Hasil Clustering dengan Sentimen ---
 plt.figure(figsize=(10, 8))
 
-# Scatter plot dengan warna berdasarkan cluster dan label sentimen
+# Scatter plot dengan warna berdasarkan cluster
 scatter = plt.scatter(df_pca_pd['x'], df_pca_pd['y'], c=df_pca_pd['cluster'], cmap='viridis', marker='o')
 
 # Tambahkan judul dan label sumbu
