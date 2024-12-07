@@ -1,0 +1,254 @@
+services:
+  hadoop-namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: hadoop-namenode
+    environment:
+      - CLUSTER_NAME=hadoop-cluster
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:8020
+    ports:
+      - "9870:9870"  # WebHDFS UI
+    networks:
+      hadoop_network:
+        aliases:
+          - hadoop-namenode
+    volumes:
+      - namenode_data:/hadoop/dfs/name
+      - ./input:/hadoop/input
+      - ./output:/hadoop/output
+    healthcheck:
+      test: curl -f http://localhost:9870 || exit 1
+      interval: 30s
+      retries: 5
+      start_period: 60s
+      timeout: 10s
+    restart: always
+
+  hadoop-datanode-1:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: hadoop-datanode-1
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:8020
+    networks:
+      hadoop_network:
+        aliases:
+          - hadoop-datanode-1
+    volumes:
+      - datanode_data_1:/hadoop/dfs/data
+      - ./data:/data
+      - ./input:/hadoop/input
+      - ./output:/hadoop/output
+    depends_on:
+      hadoop-namenode:
+        condition: service_healthy
+    ports:
+      - "9864:9864"  # Expose WebHDFS port for debugging
+    healthcheck:
+      test: curl -f http://hadoop-namenode:9870 || exit 1
+      interval: 30s
+      retries: 5
+      start_period: 60s
+      timeout: 10s
+    restart: always
+
+  hadoop-datanode-2:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: hadoop-datanode-2
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:8020
+    networks:
+      hadoop_network:
+        aliases:
+          - hadoop-datanode-2
+    volumes:
+      - datanode_data_2:/hadoop/dfs/data
+      - ./data:/data
+      - ./input:/hadoop/input
+      - ./output:/hadoop/output
+    depends_on:
+      hadoop-namenode:
+        condition: service_healthy
+    ports:
+      - "9865:9865"  # Expose WebHDFS port for debugging
+    healthcheck:
+      test: curl -f http://hadoop-namenode:9870 || exit 1
+      interval: 30s
+      retries: 5
+      start_period: 60s
+      timeout: 10s
+    restart: always
+
+  # YARN ResourceManager
+  yarn-resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
+    container_name: yarn-resourcemanager
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:8020
+      - YARN_CONF_yarn_resourcemanager_hostname=yarn-resourcemanager
+      - YARN_CONF_yarn_log_aggregation_enable=true
+    ports:
+      - "8088:8088"  # ResourceManager Web UI
+    networks:
+      hadoop_network:
+        aliases:
+          - yarn-resourcemanager
+    depends_on:
+      hadoop-namenode:
+        condition: service_healthy
+    restart: always
+
+  # YARN NodeManager
+  yarn-nodemanager-1:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    container_name: yarn-nodemanager-1
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:8020
+      - YARN_CONF_yarn_nodemanager_hostname=yarn-nodemanager-1
+    networks:
+      hadoop_network:
+        aliases:
+          - yarn-nodemanager-1
+    depends_on:
+      - yarn-resourcemanager
+    restart: always
+
+  yarn-nodemanager-2:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    container_name: yarn-nodemanager-2
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:8020
+      - YARN_CONF_yarn_nodemanager_hostname=yarn-nodemanager-2
+    networks:
+      hadoop_network:
+        aliases:
+          - yarn-nodemanager-2
+    depends_on:
+      - yarn-resourcemanager
+    restart: always
+
+  # Hive Metastore
+  hive-metastore:
+    image: bde2020/hive:2.3.2-postgresql-metastore
+    container_name: hive-metastore
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:8020
+      - HIVE_METASTORE_URI=thrift://hive-metastore:9083
+    networks:
+      hadoop_network:
+        aliases:
+          - hive-metastore
+    depends_on:
+      hadoop-namenode:
+        condition: service_healthy
+    ports:
+      - "9083:9083"  # Hive Metastore thrift service
+    restart: always
+
+  # Hive Server
+  hive-server:
+    image: bde2020/hive:2.3.2
+    container_name: hive-server
+    environment:
+      - HIVE_METASTORE_URI=thrift://hive-metastore:9083
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:8020
+    networks:
+      hadoop_network:
+        aliases:
+          - hive-server
+    depends_on:
+      - hive-metastore
+    ports:
+      - "10000:10000"  # HiveServer2
+    restart: always
+
+  spark-master:
+    image: bitnami/spark:3.3.1
+    container_name: spark-master
+    user: root  # To resolve "I have no name!" issue
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_IP=spark-master
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - SPARK_LOCAL_DIR=/tmp/spark
+      - SPARK_CONF_DIR=/opt/bitnami/spark/conf
+      - SPARK_DRIVER_EXTRA_JAVA_OPTIONS=-Dlog4j.logger.org.apache.hadoop.util.NativeCodeLoader=ERROR
+      - SPARK_EXECUTOR_EXTRA_JAVA_OPTIONS=-Dlog4j.logger.org.apache.hadoop.util.NativeCodeLoader=ERROR
+    ports:
+      - "8080:8080"  # Spark Master UI
+      - "7077:7077"  # Spark Master RPC
+    networks:
+      - hadoop_network
+    depends_on:
+      - hadoop-namenode
+      - hive-metastore
+    volumes:
+      - ./spark_code:/opt/bitnami/spark/code
+    healthcheck:
+      test: curl -f http://localhost:8080 || exit 1
+      interval: 30s
+      retries: 5
+      start_period: 60s
+      timeout: 10s
+    restart: always
+
+  spark-worker-1:
+    image: bitnami/spark:3.3.1
+    container_name: spark-worker-1
+    user: root  # To resolve "I have no name!" issue
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_LOCAL_DIR=/tmp/spark
+      - SPARK_DRIVER_EXTRA_JAVA_OPTIONS=-Dlog4j.logger.org.apache.hadoop.util.NativeCodeLoader=ERROR
+      - SPARK_EXECUTOR_EXTRA_JAVA_OPTIONS=-Dlog4j.logger.org.apache.hadoop.util.NativeCodeLoader=ERROR
+    networks:
+      - hadoop_network
+    depends_on:
+      - spark-master
+    volumes:
+      - ./spark_code:/opt/bitnami/spark/code
+    healthcheck:
+      test: curl -f http://spark-master:8080 || exit 1
+      interval: 30s
+      retries: 5
+      start_period: 60s
+      timeout: 10s
+    restart: always
+
+  spark-worker-2:
+    image: bitnami/spark:3.3.1
+    container_name: spark-worker-2
+    user: root  # To resolve "I have no name!" issue
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_LOCAL_DIR=/tmp/spark
+      - SPARK_DRIVER_EXTRA_JAVA_OPTIONS=-Dlog4j.logger.org.apache.hadoop.util.NativeCodeLoader=ERROR
+      - SPARK_EXECUTOR_EXTRA_JAVA_OPTIONS=-Dlog4j.logger.org.apache.hadoop.util.NativeCodeLoader=ERROR
+    networks:
+      - hadoop_network
+    depends_on:
+      - spark-master
+    volumes:
+      - ./spark_code:/opt/bitnami/spark/code
+    healthcheck:
+      test: curl -f http://spark-master:8080 || exit 1
+      interval: 30s
+      retries: 5
+      start_period: 60s
+      timeout: 10s
+    restart: always
+
+networks:
+  hadoop_network:
+    driver: bridge
+
+volumes:
+  namenode_data:
+  datanode_data_1:
+  datanode_data_2:
