@@ -5,7 +5,7 @@ from pyspark.ml.feature import Tokenizer, StopWordsRemover
 spark = SparkSession.builder.appName("PreprocessingNewsData").getOrCreate()
 
 # Membaca data dari file CSV
-df = spark.read.csv("hdfs://localhost:9000/user/username/news_data/news.csv", header=True, inferSchema=True)
+df = spark.read.csv("hdfs://hadoop-namenode:8020/user/news_data/articles_data.csv", header=True, inferSchema=True)
 
 # Membersihkan teks dengan menghapus karakter khusus dari kolom title, reporter, editor, dan content
 df_clean = df.withColumn("title", regexp_replace(col("title"), "[^a-zA-Z0-9\\s]", "")) \
@@ -38,7 +38,7 @@ df_result = df_preprocessed.withColumn("title_filtered", concat_ws(" ", col("tit
 df_result.select("title_filtered", "reporter", "editor", "date_time", "content_filtered").show(5, truncate=False)
 
 # Menyimpan hasil preprocessing ke HDFS sebagai CSV
-output_path = "hdfs://localhost:9000/user/username/news_data/hasilpreprocessing.csv"
+output_path = "hdfs://hadoop-namenode:8020/user/news_data/hasilpreprocessing.csv"
 
 df_result.select("title_filtered", "reporter", "editor", "date_time", "content_filtered") \
          .write.csv(output_path, header=True, mode="overwrite")
