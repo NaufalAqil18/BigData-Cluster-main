@@ -1,5 +1,6 @@
 from pyspark.sql.functions import col, regexp_replace, to_date, concat_ws
 from pyspark.ml.feature import Tokenizer, StopWordsRemover
+from pyspark.sql import SparkSession 
 
 # Membuat SparkSession
 spark = SparkSession.builder.appName("PreprocessingNewsData").getOrCreate()
